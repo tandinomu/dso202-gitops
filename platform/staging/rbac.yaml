@@ -1,0 +1,41 @@
+# =============================================================================
+# File        : platform/staging/rbac.yaml
+# Assignment  : DSO202 Assignment 4 (objects from Assignment 2)
+# Descriptor  : Unit II 2.3 - Kubernetes RBAC (Role and RoleBinding)
+# Purpose     : Read-only access to the staging namespace for a developer identity.
+#               This is Kubernetes RBAC (who may call the Kubernetes API), not
+#               Argo CD RBAC (bootstrap/argocd/argocd-rbac-cm-patch.yaml).
+#
+# Replace the subject with the user or group used in Assignment 2 if it differs.
+# =============================================================================
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tasktracker-viewer
+  namespace: dso202-staging
+rules:
+  # Workloads and their status: read only.
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "configmaps", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch"]
+  # Secrets are deliberately absent: credentials are not readable through this Role.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tasktracker-viewer
+  namespace: dso202-staging
+subjects:
+  - kind: User
+    name: staging-user
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: tasktracker-viewer
+  apiGroup: rbac.authorization.k8s.io

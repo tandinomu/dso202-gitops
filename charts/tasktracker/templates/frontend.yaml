@@ -1,0 +1,95 @@
+# =============================================================================
+# File        : charts/tasktracker/templates/frontend.yaml
+# Assignment  : DSO202 Assignment 4 (chart from Assignment 3)
+# Descriptor  : Unit I 1.2 - Deployments and Services; Unit IV 4.3.2 - sync waves
+# Purpose     : Frontend tier: configuration, NodePort Service and Deployment.
+#               Sync wave 2 (C5): created only after the backend is Healthy.
+#               No Ingress template exists (C9): no ingress controller is
+#               installed, and the NodePort is the access path.
+# =============================================================================
+{{- /* Rendered only when frontend.env has entries; an empty ConfigMap can
+       show as permanently OutOfSync in Argo CD. */}}
+{{- if .Values.frontend.env }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+data:
+  {{- range $key, $value := .Values.frontend.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.frontend.serviceName }}
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+spec:
+  # C10: NodePort, with the port number taken from the environment values.
+  type: {{ .Values.frontend.service.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: frontend
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+      nodePort: {{ required "frontend.service.nodePort must be set in environments/<env>/values.yaml" .Values.frontend.service.nodePort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: frontend
+  annotations:
+    # C5: last workload wave.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  # C6
+  progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        {{- include "tasktracker.labels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+      annotations:
+        checksum/config: {{ .Values.frontend.env | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      containers:
+        - name: frontend
+          # C1
+          image: "{{ .Values.frontend.image.repository }}:{{ required "frontend.image.tag must be set in environments/<env>/values.yaml" .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.port }}
+          {{- if .Values.frontend.env }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-frontend
+          {{- end }}
+          # C4
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.frontend.readinessPath }}
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 6
+          # C7
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}

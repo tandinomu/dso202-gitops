@@ -1,0 +1,100 @@
+# =============================================================================
+# File        : charts/tasktracker/templates/backend.yaml
+# Assignment  : DSO202 Assignment 4 (chart from Assignment 3)
+# Descriptor  : Unit I 1.2 - Deployments and Services; Unit IV 4.3.2 - sync waves
+# Purpose     : Backend tier: configuration, Service and Deployment.
+#               Sync wave 1 (C5): created only after the database is Healthy.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+# C2: one key per entry of backend.env. A new variable is a values change only.
+data:
+  {{- range $key, $value := .Values.backend.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.backend.serviceName }}
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: {{ .Values.backend.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+  annotations:
+    # C5: after the database (wave 0), before the frontend (wave 2).
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  # C6: a rollout that makes no progress for 120 s is reported as Degraded.
+  progressDeadlineSeconds: {{ .Values.rollout.progressDeadlineSeconds }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "tasktracker.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+      annotations:
+        # A changed environment variable rolls the Deployment, because the
+        # Pod template changes with the checksum.
+        checksum/config: {{ .Values.backend.env | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      containers:
+        - name: backend
+          # C1
+          image: "{{ .Values.backend.image.repository }}:{{ required "backend.image.tag must be set in environments/<env>/values.yaml" .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-backend
+          # C3
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: DB_PASSWORD
+          # C4: GET /api/status, as required by the brief.
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.backend.readinessPath }}
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6
+          # C7
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}

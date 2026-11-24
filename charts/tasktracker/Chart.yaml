@@ -1,0 +1,16 @@
+# =============================================================================
+# File        : charts/tasktracker/Chart.yaml
+# Assignment  : DSO202 Assignment 4 (chart from Assignment 3)
+# Descriptor  : Unit III 3.2 - Helm charts
+# Purpose     : Chart metadata. The chart is identical in every environment;
+#               environments differ only in environments/<env>/values.yaml and
+#               in the Application's targetRevision.
+# =============================================================================
+apiVersion: v2
+name: tasktracker
+description: Three-tier Task Tracker (frontend, backend, database) delivered by Argo CD
+type: application
+# Chart version: changes when templates change.
+version: 1.1.0
+# Baseline application release. Image tags themselves are values (C1).
+appVersion: "1.0"

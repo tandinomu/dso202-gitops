@@ -1,0 +1,48 @@
+# =============================================================================
+# File        : platform/staging/quota-and-limits.yaml
+# Assignment  : DSO202 Assignment 4 (objects from Assignment 2)
+# Descriptor  : Unit II 2.1 - ResourceQuota and LimitRange
+# Purpose     : Caps the total resources of the staging namespace and gives every
+#               container default requests and limits. Delivered by the
+#               platform-staging Application; the workload project cannot change it.
+#
+# If your Assignment 2 values differ, use them, but check the headroom: the
+# quota must fit the three tiers, one extra Pod during a rolling update, the
+# smoke-test Job, and the backend scaled to 3 replicas in Task 8, Drill 1.
+# Worst case with the chart defaults: requests 0.51 CPU / 0.6 GiB,
+# limits 2.45 CPU / 1.6 GiB, 7 Pods.
+# =============================================================================
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tasktracker-quota
+  namespace: dso202-staging
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "3"
+    limits.memory: 3Gi
+    persistentvolumeclaims: "2"
+    requests.storage: 5Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: tasktracker-limits
+  namespace: dso202-staging
+spec:
+  limits:
+    - type: Container
+      # Applied to a container that states no requests or limits.
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+      default:
+        cpu: 200m
+        memory: 256Mi
+      # No single container may exceed this.
+      max:
+        cpu: "1"
+        memory: 1Gi

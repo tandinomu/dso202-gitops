@@ -1,0 +1,117 @@
+# =============================================================================
+# File        : charts/tasktracker/templates/database.yaml
+# Assignment  : DSO202 Assignment 4 (chart from Assignment 3)
+# Descriptor  : Unit I 1.2.5 - StatefulSets; Unit IV 4.3.2 - sync waves
+# Purpose     : Database tier: configuration, Service and StatefulSet.
+#               Sync wave 0 (C5): the database is applied and must be Healthy
+#               before the backend (wave 1) is created.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-database
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+data:
+  {{- range $key, $value := .Values.database.env }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.database.serviceName }}
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: database
+  ports:
+    - name: postgres
+      port: {{ .Values.database.port }}
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-database
+  labels:
+    {{- include "tasktracker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+  annotations:
+    # C5: first workload wave.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  serviceName: {{ .Values.database.serviceName }}
+  replicas: {{ .Values.database.replicas }}
+  # Argo CD does not report a StatefulSet with OnDelete as Healthy (section 13).
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: database
+  template:
+    metadata:
+      labels:
+        {{- include "tasktracker.labels" . | nindent 8 }}
+        app.kubernetes.io/component: database
+      annotations:
+        # Restarts the Pod when its configuration values change.
+        checksum/config: {{ .Values.database.env | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      containers:
+        - name: database
+          # C1: repository and tag are values; no tag is written here.
+          image: "{{ .Values.database.image.repository }}:{{ required "database.image.tag must be set in environments/<env>/values.yaml" .Values.database.image.tag }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - name: postgres
+              containerPort: {{ .Values.database.port }}
+          # C2: non-secret settings from the ConfigMap above.
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-database
+          # C3: credentials from the existing Secret, never rendered by the chart.
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: POSTGRES_PASSWORD
+          # C4: ready only when PostgreSQL accepts connections.
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -h 127.0.0.1 -U "$POSTGRES_USER"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+          # C7
+          resources:
+            {{- toYaml .Values.database.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  # The PersistentVolumeClaim is created by the StatefulSet controller, not by
+  # Argo CD, so it is not tracked and survives deletion of the Application.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.database.storage }}

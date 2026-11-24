@@ -1,0 +1,23 @@
+# =============================================================================
+# File        : cluster/kind-cluster.yaml
+# Assignment  : DSO202 Assignment 4
+# Descriptor  : Unit I 1.3 - local cluster setup (reused from Practical 1)
+# Purpose     : The kind cluster that hosts Argo CD, Sealed Secrets and both
+#               Task Tracker environments.
+# Create with : kind create cluster --name dso202-gitops --config cluster/kind-cluster.yaml
+#
+# REPLACE THIS FILE with the configuration from Practical 1 if it differs
+# (node image, number of workers). Keep the 30080 port mapping: the dev
+# frontend NodePort is published on http://localhost:30080 through it.
+# Staging (NodePort 30081) is deliberately not mapped; use port-forward.
+# =============================================================================
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    # Publishes the dev frontend NodePort on the host.
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+  - role: worker
